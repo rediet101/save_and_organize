@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Extraction Testbench — Multilingual Save-and-Organize</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; }
+  textarea { width: 100%; height: 140px; font-size: 14px; }
+  select, input, button { font-size: 14px; padding: 6px; margin-top: 8px; }
+  pre { background: #111; color: #0f0; padding: 16px; overflow-x: auto; white-space: pre-wrap; }
+  label { display: block; margin-top: 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Extraction Testbench</h1>
+  <p>Manual harness for Phase 1 accuracy validation. Points at the local backend's <code>/extract</code> endpoint.</p>
+
+  <label for="apiBase">Backend URL</label>
+  <input id="apiBase" value="http://localhost:8000" size="40" />
+
+  <label for="platform">Source platform</label>
+  <select id="platform">
+    <option value="text">text</option>
+    <option value="tiktok">tiktok</option>
+    <option value="instagram">instagram</option>
+    <option value="facebook">facebook</option>
+    <option value="telegram">telegram</option>
+    <option value="screenshot">screenshot</option>
+  </select>
+
+  <label for="sourceUrl">Social media link (optional)</label>
+  <input id="sourceUrl" size="60" placeholder="https://www.instagram.com/p/ABC123/ or https://t.me/channel/123" />
+  <p style="font-size:12px;color:#666;margin-top:4px;">
+    If a link is given and no caption/screenshot is provided below, the backend will fetch the
+    page's public caption + preview image itself. Only public posts are readable this way —
+    a private or login-walled post answers 422 with <code>reason: needs_screenshot</code>,
+    so use the screenshot field below for those.
+  </p>
+
+  <label for="raw">Caption / message text</label>
+  <textarea id="raw" placeholder="Paste caption here (any language / code-switched)"></textarea>
+
+  <label for="image">Screenshot (optional)</label>
+  <input id="image" type="file" accept="image/*" />
+  <div id="imagePreview"></div>
+
+  <button onclick="runExtract()">Extract</button>
+
+  <h3>Result</h3>
+  <pre id="output">(no request yet)</pre>
+
+  <script>
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById('image').addEventListener('change', (e) => {
+      const preview = document.getElementById('imagePreview');
+      preview.innerHTML = '';
+      const file = e.target.files[0];
+      if (file) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.style.maxWidth = '240px';
+        img.style.marginTop = '8px';
+        img.style.display = 'block';
+        preview.appendChild(img);
+      }
+    });
+
+    async function runExtract() {
+      const apiBase = document.getElementById('apiBase').value.replace(/\/$/, '');
+      const raw_text = document.getElementById('raw').value;
+      const source_url = document.getElementById('sourceUrl').value;
+      const source_platform = document.getElementById('platform').value;
+      const output = document.getElementById('output');
+      const imageFile = document.getElementById('image').files[0];
+
+      output.textContent = 'Loading...';
+
+      const payload = { raw_text: raw_text || null, source_url: source_url || null, source_platform };
+      if (imageFile) {
+        payload.image_base64 = await readFileAsBase64(imageFile);
+        payload.image_mime_type = imageFile.type;
+      }
+
+      try {
+        const res = await fetch(apiBase + '/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        // A 422 with a reason code is a normal answer here, not a crash, so
+        // show the status to keep it distinguishable from a successful extract.
+        output.textContent = `HTTP ${res.status} ${res.statusText}
+
+`
+          + JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = 'Error: ' + err;
+      }
+    }
+  </script>
+</body>
+</html>
