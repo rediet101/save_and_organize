@@ -1,0 +1,52 @@
+# Render Blueprint — deploys the backend straight from this repo.
+#
+# This exists so the build config lives in version control instead of in the
+# dashboard. `rootDir: backend` is the whole fix for "failed to read dockerfile:
+# open Dockerfile: no such file or directory" — it points Render at the folder
+# that actually holds the Dockerfile, so the Dockerfile itself stays put and
+# backend/.dockerignore keeps applying (it excludes .venv and .env).
+#
+# To use: Render Dashboard -> New -> Blueprint -> pick this repo.
+# GEMINI_API_KEY is deliberately not stored here; set it in the dashboard.
+
+services:
+  - type: web
+    name: save-organize-backend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+
+    # Everything below resolves relative to this directory.
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # The container binds $PORT, which Render assigns.
+    healthCheckPath: /health
+
+    envVars:
+      # sync: false = Render prompts for it and keeps it out of the repo.
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # The documented Phase 1 model (Decision 1). The lite models are rationed
+      # hard on the free tier and answer 503 far more often.
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+
+      # Tried in order when the primary model is overloaded or rate-limited.
+      - key: GEMINI_FALLBACK_MODELS
+        value: '["gemini-3.6-flash","gemini-3.5-flash-lite"]'
+
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+
+      # Lock this down to your app's origin before any real traffic.
+      - key: CORS_ORIGINS
+        value: '["*"]'
+
+# No database service here on purpose: DATABASE_URL is declared in config.py but
+# read by no code yet (Phase 2), so provisioning Postgres now would only cost money.
